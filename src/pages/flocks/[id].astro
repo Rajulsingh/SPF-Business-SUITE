@@ -6,6 +6,12 @@ import { formatDate, todayInputValue } from "@/lib/format";
 import { canManageFarm } from "@/lib/auth";
 import { actions, isInputError } from "astro:actions";
 import { eq, sql } from "drizzle-orm";
+import {
+  targetPhotostimulationDate,
+  photostimulationDelta,
+  findFirstHenDayThresholdCrossing,
+  ageInWeeks,
+} from "@/lib/lighting";
 
 export const prerender = false;
 
@@ -39,8 +45,28 @@ const totalMortality14d = flock.dailyRecords.reduce((sum, r) => sum + r.mortalit
 const weightResult = Astro.getActionResult(actions.weightSamples.create);
 const weightInputErrors = isInputError(weightResult?.error) ? weightResult.error.fields : {};
 const vaccineResult = Astro.getActionResult(actions.vaccinations.create);
+const lightingResult = Astro.getActionResult(actions.flocks.updateLightingProgram);
 
 const canManage = canManageFarm(user.role);
+
+// Lighting program: target date from placement + target week, actual date
+// (if logged) compared against it, plus the industry checkpoint of first
+// crossing 5% hen-day production — computed from full daily-record history,
+// not just the last-14 window used elsewhere on this page.
+const targetLightDate = targetPhotostimulationDate(flock.placedOn, flock.targetPhotostimulationWeek);
+const lightDelta = flock.actualPhotostimulationDate
+  ? photostimulationDelta(targetLightDate, flock.actualPhotostimulationDate)
+  : null;
+
+const allEggRecords = await db
+  .select({ date: dailyRecords.date, eggCount: dailyRecords.eggCount })
+  .from(dailyRecords)
+  .where(eq(dailyRecords.flockId, flock.id))
+  .orderBy(dailyRecords.date);
+const henDayThresholdDate = findFirstHenDayThresholdCrossing(allEggRecords, flock.initialCount);
+const henDayThresholdAgeWeeks = henDayThresholdDate
+  ? ageInWeeks(flock.placedOn, henDayThresholdDate)
+  : null;
 ---
 
 <AppLayout title={flock.name}>
@@ -91,6 +117,116 @@ const canManage = canManageFarm(user.role);
         <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{flock.status}</p>
       </div>
     </div>
+
+    <section class="card p-4">
+      <h2 class="mb-1 text-sm font-semibold" style="color: var(--color-ink)">Lighting program</h2>
+      <p class="mb-3 text-xs" style="color: var(--color-ink-muted)">
+        Photostimulation timing matters more than most single decisions on a breeder/layer
+        farm — a week late can cost several eggs per hen; too early cuts peak production.
+        Target is placement date + target week; log the actual date once step-up lighting
+        starts.
+      </p>
+
+      <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="rounded-md p-3" style="background: var(--color-surface)">
+          <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Target date</p>
+          <p class="mt-1 text-base font-semibold" style="color: var(--color-ink)">
+            {formatDate(targetLightDate)}
+          </p>
+          <p class="text-xs" style="color: var(--color-ink-muted)">
+            week {flock.targetPhotostimulationWeek}
+          </p>
+        </div>
+        <div class="rounded-md p-3" style="background: var(--color-surface)">
+          <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Actual date</p>
+          {
+            flock.actualPhotostimulationDate ? (
+              <>
+                <p class="mt-1 text-base font-semibold" style="color: var(--color-ink)">
+                  {formatDate(flock.actualPhotostimulationDate)}
+                </p>
+                {lightDelta && (
+                  <span
+                    class={
+                      lightDelta.status === "on-time" ? "badge badge-good" : "badge badge-warning"
+                    }
+                  >
+                    {lightDelta.status === "on-time"
+                      ? "On time"
+                      : `${Math.abs(lightDelta.days)} days ${lightDelta.status}`}
+                  </span>
+                )}
+              </>
+            ) : (
+              <p class="mt-1 text-sm" style="color: var(--color-ink-muted)">Not logged yet</p>
+            )
+          }
+        </div>
+        <div class="rounded-md p-3" style="background: var(--color-surface)">
+          <p class="text-xs font-medium" style="color: var(--color-ink-muted)">
+            Age at 5% hen-day production
+          </p>
+          {
+            henDayThresholdAgeWeeks != null ? (
+              <p class="mt-1 text-base font-semibold" style="color: var(--color-ink)">
+                {henDayThresholdAgeWeeks} weeks
+              </p>
+            ) : (
+              <p class="mt-1 text-sm" style="color: var(--color-ink-muted)">Not reached yet</p>
+            )
+          }
+          <p class="text-xs" style="color: var(--color-ink-muted)">industry checkpoint: 25 wk</p>
+        </div>
+      </div>
+
+      {
+        canManage && (
+          <form
+            method="POST"
+            action={actions.flocks.updateLightingProgram}
+            class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+          >
+            <input type="hidden" name="flockId" value={flock.id} />
+            <div>
+              <label class="field-label" for="targetPhotostimulationWeek">Target week</label>
+              <input
+                id="targetPhotostimulationWeek"
+                type="number"
+                name="targetPhotostimulationWeek"
+                min="1"
+                value={flock.targetPhotostimulationWeek}
+                required
+                class="field-input"
+              />
+            </div>
+            <div>
+              <label class="field-label" for="actualPhotostimulationDate">
+                Actual photostimulation date
+              </label>
+              <input
+                id="actualPhotostimulationDate"
+                type="date"
+                name="actualPhotostimulationDate"
+                value={
+                  flock.actualPhotostimulationDate
+                    ? flock.actualPhotostimulationDate.toISOString().slice(0, 10)
+                    : ""
+                }
+                class="field-input"
+              />
+            </div>
+            <div>
+              <button type="submit" class="btn-primary w-full sm:w-auto">
+                Save lighting program
+              </button>
+            </div>
+          </form>
+        )
+      }
+      {lightingResult && !lightingResult.error && (
+        <p class="mt-3 banner-success">Lighting program updated.</p>
+      )}
+    </section>
 
     <section class="card overflow-hidden">
       <h2 class="border-b px-4 py-3 text-sm font-semibold" style="color: var(--color-ink); border-color: var(--color-border)">

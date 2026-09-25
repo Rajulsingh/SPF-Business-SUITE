@@ -15,6 +15,7 @@ export const flocksActions = {
       housingType: z.string().optional(),
       placedOn: z.coerce.date(),
       initialCount: z.coerce.number().int().positive(),
+      targetPhotostimulationWeek: z.coerce.number().int().positive().optional(),
       notes: z.string().optional(),
     }),
     handler: async (input, context) => {
@@ -30,10 +31,38 @@ export const flocksActions = {
         housingType: input.housingType || null,
         placedOn: input.placedOn,
         initialCount: input.initialCount,
+        targetPhotostimulationWeek: input.targetPhotostimulationWeek ?? 21,
         notes: input.notes || null,
         createdAt: now,
         updatedAt: now,
       });
+
+      return { success: true as const };
+    },
+  }),
+
+  updateLightingProgram: defineAction({
+    accept: "form",
+    input: z.object({
+      flockId: z.string().min(1),
+      targetPhotostimulationWeek: z.coerce.number().int().positive(),
+      actualPhotostimulationDate: z.string().nullish(),
+    }),
+    handler: async ({ flockId, targetPhotostimulationWeek, actualPhotostimulationDate }, context) => {
+      await requireManager(context);
+      const db = getDb();
+
+      await db
+        .update(flocks)
+        .set({
+          targetPhotostimulationWeek,
+          actualPhotostimulationDate:
+            actualPhotostimulationDate && actualPhotostimulationDate.trim().length > 0
+              ? new Date(actualPhotostimulationDate)
+              : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(flocks.id, flockId));
 
       return { success: true as const };
     },

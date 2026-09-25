@@ -20,6 +20,11 @@ export const flocks = sqliteTable("flocks", {
   initialCount: integer("initial_count").notNull(),
   status: text("status").notNull().default("ACTIVE"), // ACTIVE | ARCHIVED
   notes: text("notes"),
+  // Lighting/photostimulation program. Target week is bred-dependent (~21wk
+  // is the common industry default); actual date is logged once step-up
+  // lighting actually starts, so we can flag drift against the target.
+  targetPhotostimulationWeek: integer("target_photostimulation_week").notNull().default(21),
+  actualPhotostimulationDate: integer("actual_photostimulation_date", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
