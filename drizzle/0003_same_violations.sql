@@ -1,0 +1,1 @@
+ALTER TABLE `vaccination_records` ADD `response` text;

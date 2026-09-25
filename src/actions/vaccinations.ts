@@ -15,6 +15,7 @@ export const vaccinationsActions = {
       method: z.string().nullish(),
       batchNumber: z.string().nullish(),
       administeredBy: z.string().nullish(),
+      response: z.string().nullish(),
       notes: z.string().nullish(),
     }),
     handler: async (input, context) => {
@@ -29,6 +30,7 @@ export const vaccinationsActions = {
         method: parseOptionalString(input.method),
         batchNumber: parseOptionalString(input.batchNumber),
         administeredBy: parseOptionalString(input.administeredBy),
+        response: parseOptionalString(input.response),
         notes: parseOptionalString(input.notes),
         createdAt: new Date(),
       });

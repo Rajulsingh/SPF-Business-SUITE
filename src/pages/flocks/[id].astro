@@ -434,6 +434,7 @@ const henDayThresholdAgeWeeks = henDayThresholdDate
               <th>Method</th>
               <th>Batch</th>
               <th>By</th>
+              <th>Response</th>
             </tr>
           </thead>
           <tbody>
@@ -445,13 +446,24 @@ const henDayThresholdAgeWeeks = henDayThresholdDate
                   <td>{v.method ?? "—"}</td>
                   <td>{v.batchNumber ?? "—"}</td>
                   <td>{v.administeredBy ?? "—"}</td>
+                  <td>
+                    {v.response === "ADVERSE_REACTION" ? (
+                      <span class="badge badge-warning">Adverse reaction</span>
+                    ) : v.response === "MILD_REACTION" ? (
+                      <span class="badge badge-warning">Mild reaction</span>
+                    ) : v.response === "NORMAL" ? (
+                      <span class="badge badge-good">Normal</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))
             }
             {
               flock.vaccinations.length === 0 && (
                 <tr>
-                  <td colspan="5" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                  <td colspan="6" class="py-6 text-center" style="color: var(--color-ink-muted)">
                     No vaccination records yet.
                   </td>
                 </tr>
@@ -495,6 +507,19 @@ const henDayThresholdAgeWeeks = henDayThresholdDate
         <div>
           <label class="field-label" for="administeredBy">Administered by</label>
           <input id="administeredBy" name="administeredBy" class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="response">Observed response</label>
+          <select id="response" name="response" class="field-input">
+            <option value="">Not yet observed</option>
+            <option value="NORMAL">Normal</option>
+            <option value="MILD_REACTION">Mild reaction</option>
+            <option value="ADVERSE_REACTION">Adverse reaction</option>
+          </select>
+          <p class="mt-1 text-xs" style="color: var(--color-ink-muted)">
+            A calendar entry alone can't catch a bad batch — if a reaction shows up later,
+            log it as a new entry for the same vaccine/date.
+          </p>
         </div>
         <div>
           <label class="field-label" for="v-notes">Notes</label>

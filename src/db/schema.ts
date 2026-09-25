@@ -94,6 +94,10 @@ export const vaccinationRecords = sqliteTable(
     method: text("method"), // IN_OVO | SPRAY | DRINKING_WATER | INJECTION | EYE_DROP
     batchNumber: text("batch_number"),
     administeredBy: text("administered_by"),
+    // What the vaccination record page found genuinely differentiated:
+    // recording the bird's observed response, not just that the event
+    // happened — a calendar entry alone can't catch a bad batch/reaction.
+    response: text("response"), // NORMAL | MILD_REACTION | ADVERSE_REACTION
     notes: text("notes"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
