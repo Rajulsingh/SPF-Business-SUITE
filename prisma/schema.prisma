@@ -1,0 +1,95 @@
+// SPF Business Suite — breeder/layer farm data model
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         String   @default("WORKER") // OWNER | MANAGER | WORKER
+  createdAt    DateTime @default(now())
+
+  dailyRecords DailyRecord[]
+}
+
+model Flock {
+  id           String   @id @default(cuid())
+  name         String
+  breed        String?
+  source       String? // supplier name, kept free-text and supplier-agnostic
+  housingType  String? // OPEN_SIDED | ENVIRONMENT_CONTROLLED
+  placedOn     DateTime
+  initialCount Int
+  status       String   @default("ACTIVE") // ACTIVE | CULLED | ARCHIVED
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  dailyRecords  DailyRecord[]
+  weightSamples BodyWeightSample[]
+  vaccinations  VaccinationRecord[]
+}
+
+model DailyRecord {
+  id                  String   @id @default(cuid())
+  flockId             String
+  flock               Flock    @relation(fields: [flockId], references: [id], onDelete: Cascade)
+  date                DateTime
+  mortalityCount      Int      @default(0)
+  mortalityCause      String?
+  eggCount            Int?
+  feedConsumedKg      Float?
+  waterConsumedLiters Float?
+  tempC               Float?
+  humidityPct         Float?
+  notes               String?
+  recordedById        String?
+  recordedBy          User?    @relation(fields: [recordedById], references: [id])
+  createdAt           DateTime @default(now())
+
+  @@unique([flockId, date])
+  @@index([date])
+}
+
+model BodyWeightSample {
+  id              String   @id @default(cuid())
+  flockId         String
+  flock           Flock    @relation(fields: [flockId], references: [id], onDelete: Cascade)
+  date            DateTime
+  ageWeeks        Int?
+  sampleSize      Int
+  avgWeightG      Float
+  minWeightG      Float?
+  maxWeightG      Float?
+  cvPercent       Float?
+  targetCvPercent Float    @default(12)
+  rawWeightsG     String? // comma-separated individual weights, if entered
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([flockId, date])
+}
+
+model VaccinationRecord {
+  id             String   @id @default(cuid())
+  flockId        String
+  flock          Flock    @relation(fields: [flockId], references: [id], onDelete: Cascade)
+  date           DateTime
+  vaccineName    String
+  method         String? // IN_OVO | SPRAY | DRINKING_WATER | INJECTION | EYE_DROP
+  batchNumber    String?
+  administeredBy String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([flockId, date])
+}
