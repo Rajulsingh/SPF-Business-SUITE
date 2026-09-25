@@ -251,7 +251,20 @@ const henDayThresholdAgeWeeks = henDayThresholdDate
                 <tr>
                   <td>{formatDate(r.date)}</td>
                   <td>{r.mortalityCount}</td>
-                  <td>{r.eggCount ?? "—"}</td>
+                  <td>
+                    {r.eggCount ?? "—"}
+                    {(r.gradeACount != null ||
+                      r.gradeBCount != null ||
+                      r.crackedCount != null ||
+                      r.dirtyCount != null) && (
+                      <div class="text-xs" style="color: var(--color-ink-muted)">
+                        {r.gradeACount != null && `${r.gradeACount} A`}
+                        {r.gradeBCount != null && ` · ${r.gradeBCount} B`}
+                        {r.crackedCount != null && ` · ${r.crackedCount} cracked`}
+                        {r.dirtyCount != null && ` · ${r.dirtyCount} dirty`}
+                      </div>
+                    )}
+                  </td>
                   <td>{r.feedConsumedKg ?? "—"}</td>
                   <td>{r.waterConsumedLiters ?? "—"}</td>
                   <td>{r.tempC ?? "—"}</td>

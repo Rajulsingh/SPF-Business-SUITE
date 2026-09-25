@@ -40,6 +40,12 @@ export const dailyRecords = sqliteTable(
     mortalityCount: integer("mortality_count").notNull().default(0),
     mortalityCause: text("mortality_cause"),
     eggCount: integer("egg_count"),
+    // Optional grading breakdown of eggCount — PoultryCare and Tulassi both
+    // treat this as a real production-quality signal, not just a total.
+    gradeACount: integer("grade_a_count"),
+    gradeBCount: integer("grade_b_count"),
+    crackedCount: integer("cracked_count"),
+    dirtyCount: integer("dirty_count"),
     feedConsumedKg: real("feed_consumed_kg"),
     waterConsumedLiters: real("water_consumed_liters"),
     tempC: real("temp_c"),

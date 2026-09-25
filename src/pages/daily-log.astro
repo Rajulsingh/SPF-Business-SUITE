@@ -26,6 +26,10 @@ type TodayValues = {
   mortalityCount: number;
   mortalityCause: string;
   eggCount: string;
+  gradeACount: string;
+  gradeBCount: string;
+  crackedCount: string;
+  dirtyCount: string;
   feedConsumedKg: string;
   waterConsumedLiters: string;
   tempC: string;
@@ -39,6 +43,10 @@ for (const r of todayRecords) {
     mortalityCount: r.mortalityCount,
     mortalityCause: r.mortalityCause ?? "",
     eggCount: r.eggCount?.toString() ?? "",
+    gradeACount: r.gradeACount?.toString() ?? "",
+    gradeBCount: r.gradeBCount?.toString() ?? "",
+    crackedCount: r.crackedCount?.toString() ?? "",
+    dirtyCount: r.dirtyCount?.toString() ?? "",
     feedConsumedKg: r.feedConsumedKg?.toString() ?? "",
     waterConsumedLiters: r.waterConsumedLiters?.toString() ?? "",
     tempC: r.tempC?.toString() ?? "",
@@ -125,6 +133,34 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
               </div>
             </div>
 
+            <details class="rounded-md border p-3 text-sm" style="border-color: var(--color-border)">
+              <summary class="cursor-pointer font-medium" style="color: var(--color-ink-secondary)">
+                Egg grading breakdown (optional)
+              </summary>
+              <p class="mt-2 text-xs" style="color: var(--color-ink-muted)">
+                Splits today's egg count by grade — a quality signal, not just a total. Leave
+                blank if grading isn't done at collection time.
+              </p>
+              <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <label class="field-label" for="gradeACount">Grade A</label>
+                  <input id="gradeACount" type="number" name="gradeACount" min="0" class="field-input" />
+                </div>
+                <div>
+                  <label class="field-label" for="gradeBCount">Grade B</label>
+                  <input id="gradeBCount" type="number" name="gradeBCount" min="0" class="field-input" />
+                </div>
+                <div>
+                  <label class="field-label" for="crackedCount">Cracked</label>
+                  <input id="crackedCount" type="number" name="crackedCount" min="0" class="field-input" />
+                </div>
+                <div>
+                  <label class="field-label" for="dirtyCount">Dirty</label>
+                  <input id="dirtyCount" type="number" name="dirtyCount" min="0" class="field-input" />
+                </div>
+              </div>
+            </details>
+
             <div>
               <label class="field-label" for="notes">Notes</label>
               <textarea id="notes" name="notes" rows="2" class="field-input" />
@@ -197,6 +233,10 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
       mortalityCount: 0,
       mortalityCause: "",
       eggCount: "",
+      gradeACount: "",
+      gradeBCount: "",
+      crackedCount: "",
+      dirtyCount: "",
       feedConsumedKg: "",
       waterConsumedLiters: "",
       tempC: "",
@@ -209,6 +249,10 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
     const fieldIds = [
       "mortalityCount",
       "eggCount",
+      "gradeACount",
+      "gradeBCount",
+      "crackedCount",
+      "dirtyCount",
       "feedConsumedKg",
       "waterConsumedLiters",
       "tempC",
