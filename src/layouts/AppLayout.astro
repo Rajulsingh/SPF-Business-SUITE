@@ -1,0 +1,79 @@
+---
+import "@/styles/global.css";
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+const user = Astro.locals.user;
+
+const navLinks = [
+  { href: "/", label: "Dashboard" },
+  { href: "/daily-log", label: "Daily log" },
+  { href: "/flocks", label: "Flocks" },
+  ...(user && user.role === "OWNER" ? [{ href: "/users", label: "Users" }] : []),
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>{title} — SPF Business Suite</title>
+  </head>
+  <body class="min-h-screen font-sans text-[15px] antialiased">
+    <header class="border-b" style="border-color: var(--color-border)">
+      <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div>
+          <p class="text-sm font-semibold" style="color: var(--color-ink)">SPF Business Suite</p>
+          <p class="text-xs" style="color: var(--color-ink-muted)">Breeder farm daily records</p>
+        </div>
+        {
+          user && (
+            <nav class="flex flex-wrap items-center gap-1 text-sm">
+              {navLinks.map((link) => (
+                <a
+                  href={link.href}
+                  class="rounded-md px-3 py-1.5 font-medium hover:bg-[var(--color-surface)]"
+                  style="color: var(--color-ink-secondary)"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          )
+        }
+        {
+          user && (
+            <div class="flex items-center gap-3 text-sm">
+              <span style="color: var(--color-ink-muted)">
+                {user.name} <span>({user.role})</span>
+              </span>
+              <form method="POST" action="/logout">
+                <button type="submit" class="btn-secondary">Sign out</button>
+              </form>
+            </div>
+          )
+        }
+      </div>
+    </header>
+    <main class="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+      <slot />
+    </main>
+  </body>
+</html>

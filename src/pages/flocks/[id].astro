@@ -1,0 +1,364 @@
+---
+import AppLayout from "@/layouts/AppLayout.astro";
+import { getDb } from "@/db/client";
+import { dailyRecords } from "@/db/schema";
+import { formatDate, todayInputValue } from "@/lib/format";
+import { canManageFarm } from "@/lib/auth";
+import { actions, isInputError } from "astro:actions";
+import { eq, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const user = Astro.locals.user!;
+const db = getDb();
+
+const flock = await db.query.flocks.findFirst({
+  where: (flocks, { eq }) => eq(flocks.id, id!),
+  with: {
+    dailyRecords: { orderBy: (r, { desc }) => [desc(r.date)], limit: 14 },
+    weightSamples: { orderBy: (r, { desc }) => [desc(r.date)], limit: 10 },
+    vaccinations: { orderBy: (r, { desc }) => [desc(r.date)], limit: 10 },
+  },
+});
+
+if (!flock) {
+  return new Response(null, { status: 404 });
+}
+
+const mortalitySumResult = await db
+  .select({ total: sql<number>`coalesce(sum(${dailyRecords.mortalityCount}), 0)` })
+  .from(dailyRecords)
+  .where(eq(dailyRecords.flockId, flock.id));
+const totalMortality = mortalitySumResult[0]?.total ?? 0;
+const currentCount = flock.initialCount - totalMortality;
+
+const ageInDays = Math.floor((Date.now() - flock.placedOn.getTime()) / (1000 * 60 * 60 * 24));
+const totalMortality14d = flock.dailyRecords.reduce((sum, r) => sum + r.mortalityCount, 0);
+
+const weightResult = Astro.getActionResult(actions.weightSamples.create);
+const weightInputErrors = isInputError(weightResult?.error) ? weightResult.error.fields : {};
+const vaccineResult = Astro.getActionResult(actions.vaccinations.create);
+
+const canManage = canManageFarm(user.role);
+---
+
+<AppLayout title={flock.name}>
+  <div class="space-y-8">
+    <div>
+      <a href="/flocks" class="text-sm" style="color: var(--color-ink-secondary)">← All flocks</a>
+      <div class="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-xl font-semibold" style="color: var(--color-ink)">{flock.name}</h1>
+          <p class="text-sm" style="color: var(--color-ink-muted)">
+            {flock.breed ?? "Breed not set"} · placed {formatDate(flock.placedOn)} ({ageInDays}{" "}
+            days ago) · source: {flock.source ?? "not set"}
+          </p>
+        </div>
+        {
+          canManage && flock.status === "ACTIVE" && (
+            <form method="POST" action={actions.flocks.updateStatus}>
+              <input type="hidden" name="flockId" value={flock.id} />
+              <input type="hidden" name="status" value="ARCHIVED" />
+              <button type="submit" class="btn-secondary">Archive flock</button>
+            </form>
+          )
+        }
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Initial count</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">
+          {flock.initialCount.toLocaleString()}
+        </p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Estimated current count</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">
+          {currentCount.toLocaleString()}
+        </p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Mortality, last 14 entries</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">
+          {totalMortality14d.toLocaleString()}
+        </p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Status</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{flock.status}</p>
+      </div>
+    </div>
+
+    <section class="card overflow-hidden">
+      <h2 class="border-b px-4 py-3 text-sm font-semibold" style="color: var(--color-ink); border-color: var(--color-border)">
+        Recent daily records
+      </h2>
+      <div class="overflow-x-auto">
+        <table class="table-shell">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Mortality</th>
+              <th>Eggs</th>
+              <th>Feed (kg)</th>
+              <th>Water (L)</th>
+              <th>Temp °C</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              flock.dailyRecords.map((r) => (
+                <tr>
+                  <td>{formatDate(r.date)}</td>
+                  <td>{r.mortalityCount}</td>
+                  <td>{r.eggCount ?? "—"}</td>
+                  <td>{r.feedConsumedKg ?? "—"}</td>
+                  <td>{r.waterConsumedLiters ?? "—"}</td>
+                  <td>{r.tempC ?? "—"}</td>
+                  <td>{r.notes ?? "—"}</td>
+                </tr>
+              ))
+            }
+            {
+              flock.dailyRecords.length === 0 && (
+                <tr>
+                  <td colspan="7" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                    No daily records yet.{" "}
+                    <a href="/daily-log" style="color: var(--color-ink)">
+                      Log today's entry
+                    </a>
+                    .
+                  </td>
+                </tr>
+              )
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card p-4">
+      <h2 class="mb-3 text-sm font-semibold" style="color: var(--color-ink)">
+        Body-weight uniformity samples
+      </h2>
+      <div class="mb-4 overflow-x-auto">
+        <table class="table-shell">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Age (wk)</th>
+              <th>n</th>
+              <th>Avg (g)</th>
+              <th>CV %</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              flock.weightSamples.map((s) => {
+                const flagged = s.cvPercent != null && s.cvPercent > s.targetCvPercent;
+                return (
+                  <tr>
+                    <td>{formatDate(s.date)}</td>
+                    <td>{s.ageWeeks ?? "—"}</td>
+                    <td>{s.sampleSize}</td>
+                    <td>{s.avgWeightG.toFixed(1)}</td>
+                    <td>{s.cvPercent != null ? s.cvPercent.toFixed(1) : "—"}</td>
+                    <td>
+                      {s.cvPercent == null ? (
+                        "—"
+                      ) : flagged ? (
+                        <span class="badge badge-warning">Above target ({s.targetCvPercent}%)</span>
+                      ) : (
+                        <span class="badge badge-good">Within target</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            }
+            {
+              flock.weightSamples.length === 0 && (
+                <tr>
+                  <td colspan="6" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                    No weight samples recorded yet.
+                  </td>
+                </tr>
+              )
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <form method="POST" action={actions.weightSamples.create} class="space-y-3">
+        <input type="hidden" name="flockId" value={flock.id} />
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div>
+            <label class="field-label" for="ws-date">Date</label>
+            <input id="ws-date" type="date" name="date" required value={todayInputValue()} class="field-input" />
+          </div>
+          <div>
+            <label class="field-label" for="ageWeeks">Age (weeks)</label>
+            <input id="ageWeeks" type="number" name="ageWeeks" min="0" class="field-input" />
+          </div>
+          <div class="col-span-2">
+            <label class="field-label" for="targetCvPercent">Target CV band (%)</label>
+            <input
+              id="targetCvPercent"
+              type="number"
+              name="targetCvPercent"
+              step="0.1"
+              value="12"
+              class="field-input"
+            />
+            <p class="mt-1 text-xs" style="color: var(--color-ink-muted)">
+              Good-practice target is ~10–12% CV; samples above this are flagged.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label class="field-label" for="rawWeightsG">Individual sample weights (grams)</label>
+          <textarea
+            id="rawWeightsG"
+            name="rawWeightsG"
+            rows="3"
+            placeholder="e.g. 1820, 1795, 1910, 1780, 1860 …"
+            class="field-input"
+          />
+          <p class="mt-1 text-xs" style="color: var(--color-ink-muted)">
+            Separate weights with commas, spaces, or new lines. Average, spread, and CV% are
+            computed automatically from this list.
+          </p>
+        </div>
+
+        <details class="rounded-md border p-3 text-sm" style="border-color: var(--color-border)">
+          <summary class="cursor-pointer font-medium" style="color: var(--color-ink-secondary)">
+            Or enter a pre-computed average instead
+          </summary>
+          <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <label class="field-label" for="sampleSize">Sample size</label>
+              <input id="sampleSize" type="number" name="sampleSize" min="1" class="field-input" />
+            </div>
+            <div>
+              <label class="field-label" for="avgWeightG">Average weight (g)</label>
+              <input id="avgWeightG" type="number" name="avgWeightG" step="0.1" class="field-input" />
+            </div>
+            <div>
+              <label class="field-label" for="cvPercent">CV (%)</label>
+              <input id="cvPercent" type="number" name="cvPercent" step="0.1" class="field-input" />
+            </div>
+          </div>
+        </details>
+
+        <div>
+          <label class="field-label" for="ws-notes">Notes</label>
+          <input id="ws-notes" name="notes" class="field-input" />
+        </div>
+
+        {weightResult?.error && (
+          <p class="banner-error">
+            {isInputError(weightResult.error)
+              ? Object.values(weightInputErrors).flat().join(" ")
+              : weightResult.error.message}
+          </p>
+        )}
+        {weightResult && !weightResult.error && <p class="banner-success">Weight sample saved.</p>}
+
+        <button type="submit" class="btn-primary">Save weight sample</button>
+      </form>
+    </section>
+
+    <section class="card p-4">
+      <h2 class="mb-3 text-sm font-semibold" style="color: var(--color-ink)">Vaccination log</h2>
+      <div class="mb-4 overflow-x-auto">
+        <table class="table-shell">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Vaccine</th>
+              <th>Method</th>
+              <th>Batch</th>
+              <th>By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              flock.vaccinations.map((v) => (
+                <tr>
+                  <td>{formatDate(v.date)}</td>
+                  <td>{v.vaccineName}</td>
+                  <td>{v.method ?? "—"}</td>
+                  <td>{v.batchNumber ?? "—"}</td>
+                  <td>{v.administeredBy ?? "—"}</td>
+                </tr>
+              ))
+            }
+            {
+              flock.vaccinations.length === 0 && (
+                <tr>
+                  <td colspan="5" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                    No vaccination records yet.
+                  </td>
+                </tr>
+              )
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <form method="POST" action={actions.vaccinations.create} class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <input type="hidden" name="flockId" value={flock.id} />
+        <div>
+          <label class="field-label" for="v-date">Date</label>
+          <input id="v-date" type="date" name="date" required value={todayInputValue()} class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="vaccineName">Vaccine name</label>
+          <input
+            id="vaccineName"
+            name="vaccineName"
+            required
+            placeholder="e.g. HVT + Rispens (Marek's)"
+            class="field-input"
+          />
+        </div>
+        <div>
+          <label class="field-label" for="method">Method</label>
+          <select id="method" name="method" class="field-input">
+            <option value="">Not specified</option>
+            <option value="IN_OVO">In-ovo</option>
+            <option value="SPRAY">Spray</option>
+            <option value="DRINKING_WATER">Drinking water</option>
+            <option value="INJECTION">Injection</option>
+            <option value="EYE_DROP">Eye drop</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="batchNumber">Batch number</label>
+          <input id="batchNumber" name="batchNumber" class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="administeredBy">Administered by</label>
+          <input id="administeredBy" name="administeredBy" class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="v-notes">Notes</label>
+          <input id="v-notes" name="notes" class="field-input" />
+        </div>
+        {vaccineResult?.error && <p class="sm:col-span-2 banner-error">{vaccineResult.error.message}</p>}
+        {vaccineResult && !vaccineResult.error && (
+          <p class="sm:col-span-2 banner-success">Vaccination recorded.</p>
+        )}
+        <div class="sm:col-span-2">
+          <button type="submit" class="btn-primary">Add vaccination record</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</AppLayout>

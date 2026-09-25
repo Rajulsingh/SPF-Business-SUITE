@@ -1,0 +1,234 @@
+---
+import AppLayout from "@/layouts/AppLayout.astro";
+import { getDb } from "@/db/client";
+import { formatDate, todayInputValue, startOfUtcDay } from "@/lib/format";
+import { actions, isInputError } from "astro:actions";
+import { eq } from "drizzle-orm";
+import { flocks as flocksTable } from "@/db/schema";
+
+export const prerender = false;
+
+const db = getDb();
+
+const activeFlocks = await db.query.flocks.findMany({
+  where: eq(flocksTable.status, "ACTIVE"),
+  orderBy: (f, { asc }) => [asc(f.name)],
+  columns: { id: true, name: true },
+});
+
+const todayStart = startOfUtcDay();
+const todayRecords = await db.query.dailyRecords.findMany({
+  where: (r, { eq }) => eq(r.date, todayStart),
+  with: { flock: { columns: { name: true } }, recordedBy: { columns: { name: true } } },
+});
+
+type TodayValues = {
+  mortalityCount: number;
+  mortalityCause: string;
+  eggCount: string;
+  feedConsumedKg: string;
+  waterConsumedLiters: string;
+  tempC: string;
+  humidityPct: string;
+  notes: string;
+};
+
+const todayByFlockId: Record<string, TodayValues> = {};
+for (const r of todayRecords) {
+  todayByFlockId[r.flockId] = {
+    mortalityCount: r.mortalityCount,
+    mortalityCause: r.mortalityCause ?? "",
+    eggCount: r.eggCount?.toString() ?? "",
+    feedConsumedKg: r.feedConsumedKg?.toString() ?? "",
+    waterConsumedLiters: r.waterConsumedLiters?.toString() ?? "",
+    tempC: r.tempC?.toString() ?? "",
+    humidityPct: r.humidityPct?.toString() ?? "",
+    notes: r.notes ?? "",
+  };
+}
+
+const result = Astro.getActionResult(actions.dailyRecords.upsert);
+const inputErrors = isInputError(result?.error) ? result.error.fields : {};
+---
+
+<AppLayout title="Daily log">
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-xl font-semibold" style="color: var(--color-ink)">Daily log</h1>
+      <p class="text-sm" style="color: var(--color-ink-muted)">
+        Quick entry for today's mortality, eggs, feed, water, and environment readings — the
+        foundation everything else (uniformity tracking, alerting, trend charts) is built on.
+        Logging the same flock again today updates that entry instead of duplicating it, and
+        pre-fills with what's already saved.
+      </p>
+    </div>
+
+    <div class="card p-4">
+      {
+        activeFlocks.length === 0 ? (
+          <p class="rounded-md p-3 text-sm" style="background: var(--color-surface); color: var(--color-ink-secondary)">
+            No active flocks yet. Add one on the Flocks page first.
+          </p>
+        ) : (
+          <form method="POST" action={actions.dailyRecords.upsert} id="daily-log-form" class="space-y-4">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label class="field-label" for="flockId">Flock</label>
+                <select id="flockId" name="flockId" required class="field-input">
+                  {activeFlocks.map((f) => (
+                    <option value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="date">Date</label>
+                <input id="date" type="date" name="date" required value={todayInputValue()} class="field-input" />
+              </div>
+            </div>
+
+            <p id="existing-entry-banner" class="hidden rounded-md p-2 text-sm" style="background: var(--color-warning-bg); color: var(--color-warning)">
+              This flock already has an entry for today — the fields below are pre-filled with it.
+              Saving will update that entry, not create a duplicate.
+            </p>
+
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <label class="field-label" for="mortalityCount">Mortality</label>
+                <input id="mortalityCount" type="number" name="mortalityCount" min="0" value="0" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label" for="eggCount">Eggs collected</label>
+                <input id="eggCount" type="number" name="eggCount" min="0" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label" for="feedConsumedKg">Feed (kg)</label>
+                <input id="feedConsumedKg" type="number" name="feedConsumedKg" step="0.1" min="0" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label" for="waterConsumedLiters">Water (L)</label>
+                <input id="waterConsumedLiters" type="number" name="waterConsumedLiters" step="0.1" min="0" class="field-input" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <label class="field-label" for="tempC">Temp °C</label>
+                <input id="tempC" type="number" name="tempC" step="0.1" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label" for="humidityPct">Humidity %</label>
+                <input id="humidityPct" type="number" name="humidityPct" step="0.1" class="field-input" />
+              </div>
+              <div class="col-span-2">
+                <label class="field-label" for="mortalityCause">Mortality cause (if any)</label>
+                <input id="mortalityCause" name="mortalityCause" class="field-input" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label" for="notes">Notes</label>
+              <textarea id="notes" name="notes" rows="2" class="field-input" />
+            </div>
+
+            {result?.error && (
+              <p class="banner-error">
+                {isInputError(result.error)
+                  ? Object.values(inputErrors).flat().join(" ")
+                  : result.error.message}
+              </p>
+            )}
+            {result && !result.error && <p class="banner-success">Saved.</p>}
+
+            <button type="submit" class="btn-primary w-full sm:w-auto">Save today's entry</button>
+          </form>
+        )
+      }
+    </div>
+
+    <div class="card overflow-hidden">
+      <h2 class="border-b px-4 py-3 text-sm font-semibold" style="color: var(--color-ink); border-color: var(--color-border)">
+        Logged today ({formatDate(todayStart)})
+      </h2>
+      <div class="overflow-x-auto">
+        <table class="table-shell">
+          <thead>
+            <tr>
+              <th>Flock</th>
+              <th>Mortality</th>
+              <th>Eggs</th>
+              <th>Feed (kg)</th>
+              <th>Logged by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              todayRecords.map((r) => (
+                <tr>
+                  <td>{r.flock.name}</td>
+                  <td>{r.mortalityCount}</td>
+                  <td>{r.eggCount ?? "—"}</td>
+                  <td>{r.feedConsumedKg ?? "—"}</td>
+                  <td>{r.recordedBy?.name ?? "—"}</td>
+                </tr>
+              ))
+            }
+            {
+              todayRecords.length === 0 && (
+                <tr>
+                  <td colspan="5" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                    No entries yet today.
+                  </td>
+                </tr>
+              )
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="today-by-flock-data" set:html={JSON.stringify(todayByFlockId)} />
+  <script>
+    const data = JSON.parse(
+      document.getElementById("today-by-flock-data")?.textContent ?? "{}"
+    );
+
+    const BLANK = {
+      mortalityCount: 0,
+      mortalityCause: "",
+      eggCount: "",
+      feedConsumedKg: "",
+      waterConsumedLiters: "",
+      tempC: "",
+      humidityPct: "",
+      notes: "",
+    };
+
+    const flockSelect = document.getElementById("flockId") as HTMLSelectElement | null;
+    const banner = document.getElementById("existing-entry-banner");
+    const fieldIds = [
+      "mortalityCount",
+      "eggCount",
+      "feedConsumedKg",
+      "waterConsumedLiters",
+      "tempC",
+      "humidityPct",
+      "mortalityCause",
+      "notes",
+    ];
+
+    function applyValues(flockId: string) {
+      const values = data[flockId] ?? BLANK;
+      for (const id of fieldIds) {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el) el.value = values[id] ?? "";
+      }
+      if (banner) banner.classList.toggle("hidden", !data[flockId]);
+    }
+
+    if (flockSelect) {
+      applyValues(flockSelect.value);
+      flockSelect.addEventListener("change", () => applyValues(flockSelect.value));
+    }
+  </script>
+</AppLayout>

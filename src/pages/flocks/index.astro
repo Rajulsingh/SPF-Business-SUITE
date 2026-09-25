@@ -1,0 +1,156 @@
+---
+import AppLayout from "@/layouts/AppLayout.astro";
+import { getDb } from "@/db/client";
+import { formatDate, todayInputValue } from "@/lib/format";
+import { canManageFarm } from "@/lib/auth";
+import { actions, isInputError } from "astro:actions";
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const db = getDb();
+
+const result = Astro.getActionResult(actions.flocks.create);
+const inputErrors = isInputError(result?.error) ? result.error.fields : {};
+
+const flocksList = await db.query.flocks.findMany({
+  orderBy: (flocks, { desc }) => [desc(flocks.placedOn)],
+  with: { dailyRecords: { columns: { id: true } } },
+});
+---
+
+<AppLayout title="Flocks">
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-xl font-semibold" style="color: var(--color-ink)">Flocks</h1>
+      <p class="text-sm" style="color: var(--color-ink-muted)">
+        Each flock is a tracked batch — its own daily records, weight samples, and
+        vaccinations.
+      </p>
+    </div>
+
+    <div class="card overflow-hidden">
+      <table class="table-shell">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Breed</th>
+            <th>Placed on</th>
+            <th>Birds</th>
+            <th>Status</th>
+            <th>Records</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            flocksList.map((flock) => (
+              <tr>
+                <td>
+                  <a href={`/flocks/${flock.id}`} class="font-medium" style="color: var(--color-ink)">
+                    {flock.name}
+                  </a>
+                </td>
+                <td>{flock.breed ?? "—"}</td>
+                <td>{formatDate(flock.placedOn)}</td>
+                <td>{flock.initialCount}</td>
+                <td>
+                  <span class={flock.status === "ACTIVE" ? "badge badge-good" : "badge badge-neutral"}>
+                    {flock.status}
+                  </span>
+                </td>
+                <td>{flock.dailyRecords.length}</td>
+              </tr>
+            ))
+          }
+          {
+            flocksList.length === 0 && (
+              <tr>
+                <td colspan="6" class="py-6 text-center" style="color: var(--color-ink-muted)">
+                  No flocks yet — add your first one below.
+                </td>
+              </tr>
+            )
+          }
+        </tbody>
+      </table>
+    </div>
+
+    {
+      canManageFarm(user.role) && (
+        <div class="card p-4">
+          <h2 class="mb-3 text-sm font-semibold" style="color: var(--color-ink)">
+            Add a flock
+          </h2>
+          <form method="POST" action={actions.flocks.create} class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label class="field-label" for="name">Flock name</label>
+              <input
+                id="name"
+                name="name"
+                required
+                placeholder="e.g. Shed 3 — Batch A"
+                class="field-input"
+              />
+              {inputErrors.name && (
+                <p class="mt-1 text-xs" style="color: var(--color-critical)">
+                  {inputErrors.name.join(", ")}
+                </p>
+              )}
+            </div>
+            <div>
+              <label class="field-label" for="breed">Breed / line</label>
+              <input id="breed" name="breed" placeholder="e.g. Vencobb" class="field-input" />
+            </div>
+            <div>
+              <label class="field-label" for="source">Source / supplier</label>
+              <input id="source" name="source" placeholder="Supplier name" class="field-input" />
+            </div>
+            <div>
+              <label class="field-label" for="housingType">Housing type</label>
+              <select id="housingType" name="housingType" class="field-input">
+                <option value="">Not specified</option>
+                <option value="OPEN_SIDED">Open-sided</option>
+                <option value="ENVIRONMENT_CONTROLLED">Environment-controlled</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="placedOn">Date placed</label>
+              <input
+                id="placedOn"
+                type="date"
+                name="placedOn"
+                required
+                value={todayInputValue()}
+                class="field-input"
+              />
+            </div>
+            <div>
+              <label class="field-label" for="initialCount">Initial bird count</label>
+              <input
+                id="initialCount"
+                type="number"
+                name="initialCount"
+                min="1"
+                required
+                class="field-input"
+              />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="field-label" for="notes">Notes</label>
+              <textarea id="notes" name="notes" rows="2" class="field-input" />
+            </div>
+            {result?.error && !isInputError(result.error) && (
+              <p class="sm:col-span-2 banner-error">{result.error.message}</p>
+            )}
+            {result && !result.error && (
+              <p class="sm:col-span-2 banner-success">Flock added below.</p>
+            )}
+            <div class="sm:col-span-2">
+              <button type="submit" class="btn-primary">Add flock</button>
+            </div>
+          </form>
+        </div>
+      )
+    }
+  </div>
+</AppLayout>

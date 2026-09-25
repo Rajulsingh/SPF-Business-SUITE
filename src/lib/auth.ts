@@ -1,91 +1,86 @@
-import "server-only";
-import bcrypt from "bcryptjs";
-import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
-
 export type Role = "OWNER" | "MANAGER" | "WORKER";
 
-export type SessionPayload = {
-  userId: string;
+export type SessionUser = {
+  id: string;
   name: string;
   role: Role;
 };
 
-const SESSION_COOKIE = "spf_session";
-const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14; // 14 days
+const PBKDF2_ITERATIONS = 100_000;
 
-function getSecretKey() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error(
-      "SESSION_SECRET is missing or too short. Set it in your environment (.env) to a random string of at least 16 characters."
-    );
+function toHex(bytes: ArrayBuffer | Uint8Array): string {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return Array.from(arr)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function fromHex(hex: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
-  return new TextEncoder().encode(secret);
+  return bytes;
 }
 
-export async function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
-}
-
-export async function verifyPassword(password: string, hash: string) {
-  return bcrypt.compare(password, hash);
-}
-
-export async function createSession(payload: SessionPayload) {
-  const token = await new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
-    .sign(getSecretKey());
-
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_DURATION_SECONDS,
-  });
-}
-
-export async function destroySession() {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
-}
-
-export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  try {
-    const { payload } = await jwtVerify(token, getSecretKey());
-    if (
-      typeof payload.userId === "string" &&
-      typeof payload.name === "string" &&
-      typeof payload.role === "string"
-    ) {
-      return {
-        userId: payload.userId,
-        name: payload.name,
-        role: payload.role as Role,
-      };
-    }
-    return null;
-  } catch {
-    return null;
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
+  return diff === 0;
 }
 
-export async function requireSession(): Promise<SessionPayload> {
-  const session = await getSession();
-  if (!session) {
-    throw new Error("Not authenticated");
-  }
-  return session;
+/** PBKDF2 via Web Crypto — fast and available natively on Workers, unlike bcrypt's CPU-heavy loop. */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    key,
+    256
+  );
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${toHex(salt)}$${toHex(bits)}`;
 }
 
-export function canManageFarm(role: Role) {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const parts = stored.split("$");
+  if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
+  const [, iterationsStr, saltHex, hashHex] = parts;
+  const iterations = Number(iterationsStr);
+  if (!Number.isFinite(iterations) || iterations <= 0) return false;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: fromHex(saltHex), iterations, hash: "SHA-256" },
+    key,
+    256
+  );
+  return timingSafeEqual(toHex(bits), hashHex);
+}
+
+export function canManageFarm(role: Role): boolean {
   return role === "OWNER" || role === "MANAGER";
+}
+
+/** Minimal shape shared by Astro pages, actions, and middleware contexts. */
+type SessionLike = {
+  get<K extends keyof App.SessionData>(key: K): Promise<App.SessionData[K] | undefined>;
+};
+
+export async function getSessionUser(session: SessionLike | undefined): Promise<SessionUser | undefined> {
+  return session?.get("user");
 }

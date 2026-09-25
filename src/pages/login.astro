@@ -1,0 +1,64 @@
+---
+import "@/styles/global.css";
+import { actions } from "astro:actions";
+
+export const prerender = false;
+
+const next = Astro.url.searchParams.get("next") ?? "/";
+
+const result = Astro.getActionResult(actions.auth.login);
+if (result && !result.error) {
+  return Astro.redirect(result.data.redirectTo);
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Sign in — SPF Business Suite</title>
+  </head>
+  <body class="flex min-h-screen items-center justify-center px-4 font-sans antialiased">
+    <div class="card w-full max-w-sm p-6">
+      <h1 class="text-lg font-semibold" style="color: var(--color-ink)">SPF Business Suite</h1>
+      <p class="mt-1 text-sm" style="color: var(--color-ink-muted)">
+        Breeder farm daily record-keeping
+      </p>
+
+      <form method="POST" action={actions.auth.login} class="mt-6 space-y-4">
+        <input type="hidden" name="next" value={next} />
+        <div>
+          <label class="field-label" for="username">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            required
+            class="field-input"
+          />
+        </div>
+        <div>
+          <label class="field-label" for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            class="field-input"
+          />
+        </div>
+        {result?.error && <p class="banner-error">{result.error.message}</p>}
+        <button type="submit" class="btn-primary w-full">Sign in</button>
+      </form>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,94 @@
+---
+import AppLayout from "@/layouts/AppLayout.astro";
+import { getDb } from "@/db/client";
+import { formatDate } from "@/lib/format";
+import { actions, isInputError } from "astro:actions";
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+if (user.role !== "OWNER") {
+  return Astro.redirect("/");
+}
+
+const db = getDb();
+const allUsers = await db.query.users.findMany({ orderBy: (u, { asc }) => [asc(u.createdAt)] });
+
+const result = Astro.getActionResult(actions.users.create);
+const inputErrors = isInputError(result?.error) ? result.error.fields : {};
+---
+
+<AppLayout title="Users">
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-xl font-semibold" style="color: var(--color-ink)">Users</h1>
+      <p class="text-sm" style="color: var(--color-ink-muted)">
+        Owners and managers can add flocks and change status; workers can only log daily
+        entries and samples.
+      </p>
+    </div>
+
+    <div class="card overflow-hidden">
+      <table class="table-shell">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Added</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            allUsers.map((u) => (
+              <tr>
+                <td>{u.name}</td>
+                <td>{u.username}</td>
+                <td>{u.role}</td>
+                <td>{formatDate(u.createdAt)}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card p-4">
+      <h2 class="mb-3 text-sm font-semibold" style="color: var(--color-ink)">Add a user</h2>
+      <form method="POST" action={actions.users.create} class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="field-label" for="name">Name</label>
+          <input id="name" name="name" required class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="username">Username</label>
+          <input id="username" name="username" required class="field-input" />
+          {inputErrors.username && (
+            <p class="mt-1 text-xs" style="color: var(--color-critical)">
+              {inputErrors.username.join(", ")}
+            </p>
+          )}
+        </div>
+        <div>
+          <label class="field-label" for="password">Password</label>
+          <input id="password" type="password" name="password" required minlength="6" class="field-input" />
+        </div>
+        <div>
+          <label class="field-label" for="role">Role</label>
+          <select id="role" name="role" class="field-input">
+            <option value="WORKER">Worker — daily entry only</option>
+            <option value="MANAGER">Manager — plus flocks &amp; status</option>
+            <option value="OWNER">Owner — full access</option>
+          </select>
+        </div>
+        {result?.error && !isInputError(result.error) && (
+          <p class="sm:col-span-2 banner-error">{result.error.message}</p>
+        )}
+        {result && !result.error && <p class="sm:col-span-2 banner-success">User created.</p>}
+        <div class="sm:col-span-2">
+          <button type="submit" class="btn-primary">Add user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</AppLayout>

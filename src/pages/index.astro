@@ -1,0 +1,128 @@
+---
+import AppLayout from "@/layouts/AppLayout.astro";
+import TrendChart from "@/components/TrendChart.astro";
+import { getDb } from "@/db/client";
+import { flocks as flocksTable } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { startOfUtcDay } from "@/lib/format";
+
+export const prerender = false;
+
+const TREND_DAYS = 30;
+const MORTALITY_COLOR = "#e34948";
+const EGG_COLOR = "#2a78d6";
+
+function dayKey(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+function shortLabel(key: string) {
+  const d = new Date(`${key}T00:00:00Z`);
+  return new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(d);
+}
+
+const db = getDb();
+
+const since = startOfUtcDay();
+since.setUTCDate(since.getUTCDate() - (TREND_DAYS - 1));
+
+const [activeFlocks, records, todayRecords] = await Promise.all([
+  db.query.flocks.findMany({ where: eq(flocksTable.status, "ACTIVE") }),
+  db.query.dailyRecords.findMany({
+    where: (r, { gte }) => gte(r.date, since),
+    columns: { date: true, mortalityCount: true, eggCount: true },
+  }),
+  db.query.dailyRecords.findMany({
+    where: (r, { eq }) => eq(r.date, startOfUtcDay()),
+    columns: { mortalityCount: true, eggCount: true },
+  }),
+]);
+
+const byDay = new Map<string, { mortality: number; eggs: number }>();
+for (let i = 0; i < TREND_DAYS; i++) {
+  const d = new Date(since);
+  d.setUTCDate(since.getUTCDate() + i);
+  byDay.set(dayKey(d), { mortality: 0, eggs: 0 });
+}
+for (const r of records) {
+  const key = dayKey(r.date);
+  const bucket = byDay.get(key);
+  if (!bucket) continue;
+  bucket.mortality += r.mortalityCount;
+  bucket.eggs += r.eggCount ?? 0;
+}
+
+const mortalitySeries = Array.from(byDay.entries()).map(([key, v]) => ({
+  label: shortLabel(key),
+  value: v.mortality,
+}));
+const eggSeries = Array.from(byDay.entries()).map(([key, v]) => ({
+  label: shortLabel(key),
+  value: v.eggs,
+}));
+
+const totalBirds = activeFlocks.reduce((sum, f) => sum + f.initialCount, 0);
+const mortalityToday = todayRecords.reduce((sum, r) => sum + r.mortalityCount, 0);
+const eggsToday = todayRecords.reduce((sum, r) => sum + (r.eggCount ?? 0), 0);
+---
+
+<AppLayout title="Dashboard">
+  <div class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-semibold" style="color: var(--color-ink)">Dashboard</h1>
+        <p class="text-sm" style="color: var(--color-ink-muted)">
+          Last {TREND_DAYS} days, across active flocks
+        </p>
+      </div>
+      <a href="/daily-log" class="btn-primary">Log today's entry</a>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Active flocks</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{activeFlocks.length}</p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Birds (initial count)</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{totalBirds.toLocaleString()}</p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Mortality today</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{mortalityToday}</p>
+      </div>
+      <div class="card p-3">
+        <p class="text-xs font-medium" style="color: var(--color-ink-muted)">Eggs today</p>
+        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-ink)">{eggsToday.toLocaleString()}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div class="card p-4">
+        <h2 class="text-sm font-semibold" style="color: var(--color-ink)">Mortality trend</h2>
+        <p class="text-xs" style="color: var(--color-ink-muted)">Total birds lost per day, all active flocks</p>
+        <div class="mt-2">
+          <TrendChart data={mortalitySeries} color={MORTALITY_COLOR} unit="birds" />
+        </div>
+      </div>
+      <div class="card p-4">
+        <h2 class="text-sm font-semibold" style="color: var(--color-ink)">Egg production trend</h2>
+        <p class="text-xs" style="color: var(--color-ink-muted)">Total eggs collected per day, all active flocks</p>
+        <div class="mt-2">
+          <TrendChart data={eggSeries} color={EGG_COLOR} unit="eggs" />
+        </div>
+      </div>
+    </div>
+
+    {
+      activeFlocks.length === 0 && (
+        <div class="card border-dashed p-6 text-center text-sm" style="color: var(--color-ink-muted)">
+          No active flocks yet.{" "}
+          <a href="/flocks" style="color: var(--color-ink)">
+            Add your first flock
+          </a>{" "}
+          to start tracking.
+        </div>
+      )
+    }
+  </div>
+</AppLayout>
