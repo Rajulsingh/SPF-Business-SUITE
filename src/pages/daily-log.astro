@@ -99,6 +99,17 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
               Saving will update that entry, not create a duplicate.
             </p>
 
+            <p id="offline-banner" class="hidden rounded-md p-2 text-sm" style="background: var(--color-warning-bg); color: var(--color-warning)">
+              You're offline. Keep going — what you type is saved on this device, and you can
+              submit once you're back online.
+            </p>
+
+            <p id="draft-restored-banner" class="hidden rounded-md p-2 text-sm" style="background: var(--color-warning-bg); color: var(--color-warning)">
+              Restored an entry that wasn't confirmed saved — maybe the connection dropped last
+              time. Check it over before submitting.
+              <button type="button" id="discard-draft-btn" class="underline">Discard it instead</button>
+            </p>
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
                 <label class="field-label" for="mortalityCount">Mortality</label>
@@ -245,7 +256,12 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
     };
 
     const flockSelect = document.getElementById("flockId") as HTMLSelectElement | null;
+    const dateInput = document.getElementById("date") as HTMLInputElement | null;
+    const form = document.getElementById("daily-log-form") as HTMLFormElement | null;
     const banner = document.getElementById("existing-entry-banner");
+    const offlineBanner = document.getElementById("offline-banner");
+    const draftBanner = document.getElementById("draft-restored-banner");
+    const discardDraftBtn = document.getElementById("discard-draft-btn");
     const fieldIds = [
       "mortalityCount",
       "eggCount",
@@ -274,5 +290,100 @@ const inputErrors = isInputError(result?.error) ? result.error.fields : {};
       applyValues(flockSelect.value);
       flockSelect.addEventListener("change", () => applyValues(flockSelect.value));
     }
+
+    // Local draft recovery: this form is a plain POST (no JS required to
+    // submit), but that means a dropped connection or an accidental tab
+    // close mid-entry loses whatever was typed. We mirror the fields into
+    // localStorage as the worker types, and offer it back if the page
+    // reloads without a confirmed save.
+    const DRAFT_KEY = "spf-daily-log-draft";
+
+    type Draft = { flockId: string; date: string; values: Record<string, string> };
+
+    function readDraft(): Draft | null {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        return raw ? (JSON.parse(raw) as Draft) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function writeDraft(draft: Draft) {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch {
+        // localStorage unavailable (private browsing, full quota) — draft
+        // recovery just won't work; the plain POST still does.
+      }
+    }
+
+    function clearDraft() {
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
+      }
+    }
+
+    function currentFieldValues(): Record<string, string> {
+      const values: Record<string, string> = {};
+      for (const id of fieldIds) {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el) values[id] = el.value;
+      }
+      return values;
+    }
+
+    function saveDraftNow() {
+      if (!flockSelect || !dateInput) return;
+      writeDraft({ flockId: flockSelect.value, date: dateInput.value, values: currentFieldValues() });
+    }
+
+    const justSaved = document.querySelector(".banner-success") !== null;
+
+    if (justSaved) {
+      clearDraft();
+    } else {
+      const draft = readDraft();
+      if (draft && flockSelect) {
+        const flockStillExists = Array.from(flockSelect.options).some((o) => o.value === draft.flockId);
+        if (flockStillExists) flockSelect.value = draft.flockId;
+        if (dateInput && draft.date) dateInput.value = draft.date;
+        applyValues(flockSelect.value);
+        for (const id of fieldIds) {
+          const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+          if (el && draft.values[id] !== undefined) el.value = draft.values[id];
+        }
+        if (draftBanner) draftBanner.classList.remove("hidden");
+      }
+    }
+
+    let saveTimer: ReturnType<typeof setTimeout> | undefined;
+    if (form) {
+      form.addEventListener("input", () => {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveDraftNow, 400);
+      });
+      form.addEventListener("submit", () => {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveDraftNow();
+      });
+    }
+
+    if (discardDraftBtn) {
+      discardDraftBtn.addEventListener("click", () => {
+        clearDraft();
+        if (draftBanner) draftBanner.classList.add("hidden");
+        if (flockSelect) applyValues(flockSelect.value);
+      });
+    }
+
+    function updateOfflineBanner() {
+      if (offlineBanner) offlineBanner.classList.toggle("hidden", navigator.onLine);
+    }
+    updateOfflineBanner();
+    window.addEventListener("online", updateOfflineBanner);
+    window.addEventListener("offline", updateOfflineBanner);
   </script>
 </AppLayout>
