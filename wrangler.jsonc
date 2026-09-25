@@ -7,9 +7,7 @@
     {
       "binding": "DB",
       "database_name": "spf-business-suite",
-      // Placeholder — replace with the real database_id after running
-      // `npx wrangler d1 create spf-business-suite` (see README).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "a83f5730-5567-4fb0-a569-1f353df8d429",
       "migrations_dir": "drizzle"
     }
   ]
