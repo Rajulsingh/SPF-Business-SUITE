@@ -10,5 +10,11 @@
       "database_id": "a83f5730-5567-4fb0-a569-1f353df8d429",
       "migrations_dir": "drizzle"
     }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "aed26cdb8c5b47a5b341cbc3e34ec957"
+    }
   ]
 }
